@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 import pandas as pd
 import streamlit as st
 
 from utils.calculations import (
+    FORECAST_FIELDS,
     build_export_frame,
     calculate_comp_set,
     calculate_pickup,
@@ -19,6 +20,9 @@ from utils.validation import validate_export_inputs
 
 def calculate_adr(revenue: float, rooms: int) -> float:
     return round(revenue / rooms, 2) if rooms else 0.0
+
+
+TOTAL_HOTEL_ROOMS = 433
 
 
 st.set_page_config(page_title="Daily Revenue Checklist", layout="wide")
@@ -73,7 +77,15 @@ g3.number_input(
 
 o1, o2, o3 = st.columns(3)
 total_revenue = o1.number_input("Total Revenue", min_value=0.0, value=15960.0, step=100.0)
-adr = o2.number_input("ADR", min_value=0.0, value=142.5, step=1.0)
+adr = calculate_adr(total_revenue, TOTAL_HOTEL_ROOMS)
+o2.number_input(
+    "ADR",
+    min_value=0.0,
+    value=adr,
+    step=1.0,
+    disabled=True,
+    help="Automatically calculated as Total Revenue divided by 433 hotel rooms.",
+)
 revpar = o3.number_input("RevPAR", min_value=0.0, value=106.8, step=1.0)
 
 section_title("Lighthouse Data and OTA Pricing")
@@ -104,31 +116,16 @@ k3.metric("Rate Rank", f"#{comp_metrics.rank}" if comp_metrics.rank else "N/A")
 k4.metric("Highest Competitor", money(comp_metrics.highest_competitor_rate))
 k5.metric("Lowest Competitor", money(comp_metrics.lowest_competitor_rate))
 
-section_title("14-Day Forecast")
-forecast_template = pd.DataFrame(
-    {
-        "stay_date": [checklist_date + timedelta(days=idx) for idx in range(14)],
-        "forecast_rooms": [110 for _ in range(14)],
-        "forecast_revenue": [16500.0 for _ in range(14)],
-        "booked_rooms": [95 for _ in range(14)],
-        "available_to_sell_rooms": [55 for _ in range(14)],
-    }
-)
-forecast_df = st.data_editor(
-    forecast_template,
-    hide_index=True,
-    num_rows="fixed",
-    use_container_width=True,
-    column_config={
-        "stay_date": st.column_config.DateColumn("Stay Date"),
-        "forecast_rooms": st.column_config.NumberColumn("Forecast Rooms", min_value=0),
-        "forecast_revenue": st.column_config.NumberColumn("Forecast Revenue", min_value=0, format="$%.0f"),
-        "booked_rooms": st.column_config.NumberColumn("Booked Rooms", min_value=0),
-        "available_to_sell_rooms": st.column_config.NumberColumn("Available To Sell Rooms", min_value=0),
-    },
-)
+forecast_df = pd.DataFrame(columns=FORECAST_FIELDS)
 
 section_title("Hourly Pickup Tracker")
+forecast_column, _ = st.columns([1, 3])
+forecast_rooms_to_sell_today = forecast_column.number_input(
+    "Forecasted Rooms To Sell Today",
+    min_value=0,
+    value=0,
+    step=1,
+)
 pickup_template = pd.DataFrame(
     {
         "pickup_time": ["09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM"],
@@ -145,6 +142,25 @@ pickup_input = st.data_editor(
         "pickup_available_to_sell_rooms": st.column_config.NumberColumn("Available To Sell Rooms", min_value=0),
     },
 )
+
+pickup_calculated = calculate_pickup(pickup_input, forecast_rooms_to_sell_today)
+if not pickup_calculated.empty:
+    pickup_status = pickup_calculated[
+        [
+            "pickup_time",
+            "pickup_available_to_sell_rooms",
+            "pickup_rooms",
+            "forecast_rooms_remaining",
+        ]
+    ].rename(
+        columns={
+            "pickup_time": "Time",
+            "pickup_available_to_sell_rooms": "Available To Sell Rooms",
+            "pickup_rooms": "Pickup Rooms",
+            "forecast_rooms_remaining": "Forecast Rooms Remaining",
+        }
+    )
+    st.dataframe(pickup_status, use_container_width=True, hide_index=True)
 
 general = {
     "date": checklist_date.isoformat(),
@@ -169,6 +185,7 @@ general = {
     "booking_rate": booking_rate,
     "agoda_rate": agoda_rate,
     "priceline_rate": priceline_rate,
+    "forecast_rooms_to_sell_today": forecast_rooms_to_sell_today,
     "my_property_name": my_property_name,
     "my_property_rate": my_property_rate,
     "comp_set_average_rate": comp_metrics.average_rate,
@@ -181,13 +198,14 @@ for idx, (name, rate) in enumerate(zip(competitor_names, competitor_rates), star
     general[f"competitor_{idx}_name"] = name
     general[f"competitor_{idx}_rate"] = rate
 
-pickup_calculated = calculate_pickup(pickup_input)
 section_title("Pickup Summary")
 total_pickup = pickup_calculated["pickup_rooms"].sum() if not pickup_calculated.empty else 0
-p1, p2 = st.columns([1, 3])
+p1, p2, p3 = st.columns([1, 1, 3])
 p1.metric("Total Pickup Today", number(total_pickup))
+remaining_forecast = max(forecast_rooms_to_sell_today - total_pickup, 0)
+p2.metric("Forecast Rooms Remaining", number(remaining_forecast))
 if not pickup_calculated.empty:
-    p2.plotly_chart(pickup_chart(pickup_calculated), use_container_width=True)
+    p3.plotly_chart(pickup_chart(pickup_calculated), use_container_width=True)
 
 submitted = st.button("Export Today's Checklist", type="primary")
 if submitted:

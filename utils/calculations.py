@@ -29,6 +29,7 @@ GENERAL_FIELDS = [
     "booking_rate",
     "agoda_rate",
     "priceline_rate",
+    "forecast_rooms_to_sell_today",
     "my_property_name",
     "my_property_rate",
     "competitor_1_name",
@@ -56,7 +57,13 @@ FORECAST_FIELDS = [
     "available_to_sell_rooms",
 ]
 
-PICKUP_FIELDS = ["pickup_time", "pickup_available_to_sell_rooms", "pickup_rooms"]
+PICKUP_FIELDS = [
+    "pickup_time",
+    "pickup_available_to_sell_rooms",
+    "pickup_rooms",
+    "forecast_rooms_remaining",
+]
+OPTIONAL_CSV_COLUMNS = ["forecast_rooms_to_sell_today", "forecast_rooms_remaining"]
 
 COMPETITOR_RATE_FIELDS = [f"competitor_{idx}_rate" for idx in range(1, 6)]
 OTA_RATE_FIELDS = ["expedia_rate", "booking_rate", "agoda_rate", "priceline_rate"]
@@ -128,7 +135,7 @@ def calculate_comp_set(my_rate: float, competitor_rates: Iterable[float]) -> Com
     )
 
 
-def calculate_pickup(pickup_df: pd.DataFrame) -> pd.DataFrame:
+def calculate_pickup(pickup_df: pd.DataFrame, forecast_rooms_to_sell_today: float | int | None = None) -> pd.DataFrame:
     df = pickup_df.copy()
     if df.empty:
         return pd.DataFrame(columns=PICKUP_FIELDS)
@@ -138,13 +145,15 @@ def calculate_pickup(pickup_df: pd.DataFrame) -> pd.DataFrame:
     df["pickup_rooms"] = (
         df["pickup_available_to_sell_rooms"].shift(1) - df["pickup_available_to_sell_rooms"]
     ).fillna(0)
+    forecast_rooms = to_number(forecast_rooms_to_sell_today)
+    df["forecast_rooms_remaining"] = (forecast_rooms - df["pickup_rooms"].cumsum()).clip(lower=0)
     return df
 
 
 def build_export_frame(general: dict, forecast_df: pd.DataFrame, pickup_df: pd.DataFrame) -> pd.DataFrame:
     max_rows = max(len(forecast_df), len(pickup_df), 1)
     rows = []
-    pickup_df = calculate_pickup(pickup_df)
+    pickup_df = calculate_pickup(pickup_df, general.get("forecast_rooms_to_sell_today"))
     for idx in range(max_rows):
         row = dict(general)
         if idx < len(forecast_df):
@@ -221,4 +230,3 @@ def compare_values(new_value: float, old_value: float) -> tuple[float, float]:
     change = to_number(new_value) - to_number(old_value)
     pct_change = (change / old_value * 100) if old_value else 0.0
     return change, pct_change
-

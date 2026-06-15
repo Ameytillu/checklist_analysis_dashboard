@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from utils.calculations import CSV_COLUMNS
+from utils.calculations import CSV_COLUMNS, OPTIONAL_CSV_COLUMNS
 
 
 def validate_export_inputs(general: dict, forecast_df: pd.DataFrame, pickup_df: pd.DataFrame) -> list[str]:
@@ -15,9 +15,9 @@ def validate_export_inputs(general: dict, forecast_df: pd.DataFrame, pickup_df: 
         errors.append("Total rooms sold cannot be negative.")
     if general.get("my_property_rate", 0) <= 0:
         errors.append("My property rate must be greater than zero.")
-    if forecast_df.empty:
-        errors.append("The 14-day forecast table cannot be empty.")
-    elif forecast_df[["stay_date", "forecast_rooms", "booked_rooms", "available_to_sell_rooms"]].isna().any().any():
+    if not forecast_df.empty and forecast_df[
+        ["stay_date", "forecast_rooms", "booked_rooms", "available_to_sell_rooms"]
+    ].isna().any().any():
         errors.append("The forecast table has missing required values.")
     if pickup_df.empty:
         errors.append("Add at least one pickup tracker row.")
@@ -30,7 +30,8 @@ def validate_uploaded_checklist(df: pd.DataFrame, filename: str = "uploaded file
     errors = []
     if df.empty:
         errors.append(f"{filename} is empty.")
-    missing = [column for column in CSV_COLUMNS if column not in df.columns]
+    required_columns = [column for column in CSV_COLUMNS if column not in OPTIONAL_CSV_COLUMNS]
+    missing = [column for column in required_columns if column not in df.columns]
     if missing:
         preview = ", ".join(missing[:8])
         suffix = "..." if len(missing) > 8 else ""
@@ -43,4 +44,3 @@ def validate_uploaded_checklist(df: pd.DataFrame, filename: str = "uploaded file
 def detect_duplicate_uploads(files) -> list[str]:
     names = [file.name for file in files]
     return sorted({name for name in names if names.count(name) > 1})
-
