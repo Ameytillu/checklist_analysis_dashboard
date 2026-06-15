@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+import json
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -22,6 +24,55 @@ def calculate_adr(revenue: float, rooms: int) -> float:
     return round(revenue / rooms, 2) if rooms else 0.0
 
 
+def draft_path(checklist_day: date) -> Path:
+    return Path("drafts") / f"checklist_{checklist_day.isoformat()}.json"
+
+
+def load_draft(checklist_day: date) -> dict:
+    path = draft_path(checklist_day)
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_draft(checklist_day: date, payload: dict) -> Path:
+    path = draft_path(checklist_day)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    return path
+
+
+def draft_value(draft: dict, key: str, default):
+    value = draft.get(key, default)
+    return default if value is None else value
+
+
+def int_value(draft: dict, key: str, default: int) -> int:
+    try:
+        return int(draft_value(draft, key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def float_value(draft: dict, key: str, default: float) -> float:
+    try:
+        return float(draft_value(draft, key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def format_saved_time(saved_at: str | None) -> str:
+    if not saved_at:
+        return "Not saved yet"
+    try:
+        return datetime.fromisoformat(saved_at).strftime("%Y-%m-%d %I:%M %p")
+    except ValueError:
+        return saved_at
+
+
 TOTAL_HOTEL_ROOMS = 433
 
 
@@ -40,18 +91,64 @@ callout(
 section_title("General Hotel Metrics")
 c1, c2, c3, c4 = st.columns(4)
 checklist_date = c1.date_input("Date", value=date.today())
-occupancy_pct = c2.number_input("Occupancy %", min_value=0.0, max_value=100.0, value=75.0, step=0.1)
-expected_arrivals = c3.number_input("Expected Arrivals", min_value=0, value=25)
-expected_departures = c4.number_input("Expected Departures", min_value=0, value=20)
+draft = load_draft(checklist_date)
+draft_key = checklist_date.isoformat()
+c1.caption(f"Last saved: {format_saved_time(draft.get('saved_at'))}")
+occupancy_pct = c2.number_input(
+    "Occupancy %",
+    min_value=0.0,
+    max_value=100.0,
+    value=float_value(draft, "occupancy_pct", 75.0),
+    step=0.1,
+    key=f"occupancy_pct_{draft_key}",
+)
+expected_arrivals = c3.number_input(
+    "Expected Arrivals",
+    min_value=0,
+    value=int_value(draft, "expected_arrivals", 25),
+    key=f"expected_arrivals_{draft_key}",
+)
+expected_departures = c4.number_input(
+    "Expected Departures",
+    min_value=0,
+    value=int_value(draft, "expected_departures", 20),
+    key=f"expected_departures_{draft_key}",
+)
 c1, c2, c3 = st.columns(3)
-out_of_order_rooms = c1.number_input("Out of Order / Out of Market Rooms", min_value=0, value=0)
-total_rooms_available = c2.number_input("Total Rooms Available", min_value=1, value=150)
-total_rooms_sold = c3.number_input("Total Rooms Sold", min_value=0, value=112)
+out_of_order_rooms = c1.number_input(
+    "Out of Order / Out of Market Rooms",
+    min_value=0,
+    value=int_value(draft, "out_of_order_rooms", 0),
+    key=f"out_of_order_rooms_{draft_key}",
+)
+total_rooms_available = c2.number_input(
+    "Total Rooms Available",
+    min_value=1,
+    value=int_value(draft, "total_rooms_available", 150),
+    key=f"total_rooms_available_{draft_key}",
+)
+total_rooms_sold = c3.number_input(
+    "Total Rooms Sold",
+    min_value=0,
+    value=int_value(draft, "total_rooms_sold", 112),
+    key=f"total_rooms_sold_{draft_key}",
+)
 
 section_title("Previous Night Performance")
 t1, t2, t3 = st.columns(3)
-transient_rooms = t1.number_input("Transient Rooms", min_value=0, value=70)
-transient_revenue = t2.number_input("Transient Revenue", min_value=0.0, value=10500.0, step=100.0)
+transient_rooms = t1.number_input(
+    "Transient Rooms",
+    min_value=0,
+    value=int_value(draft, "transient_rooms", 70),
+    key=f"transient_rooms_{draft_key}",
+)
+transient_revenue = t2.number_input(
+    "Transient Revenue",
+    min_value=0.0,
+    value=float_value(draft, "transient_revenue", 10500.0),
+    step=100.0,
+    key=f"transient_revenue_{draft_key}",
+)
 transient_adr = calculate_adr(transient_revenue, transient_rooms)
 t3.number_input(
     "Transient ADR",
@@ -60,11 +157,23 @@ t3.number_input(
     step=1.0,
     disabled=True,
     help="Automatically calculated as Transient Revenue divided by Transient Rooms.",
+    key=f"transient_adr_{draft_key}",
 )
 
 g1, g2, g3 = st.columns(3)
-group_rooms = g1.number_input("Group Rooms", min_value=0, value=42)
-group_revenue = g2.number_input("Group Revenue", min_value=0.0, value=5460.0, step=100.0)
+group_rooms = g1.number_input(
+    "Group Rooms",
+    min_value=0,
+    value=int_value(draft, "group_rooms", 42),
+    key=f"group_rooms_{draft_key}",
+)
+group_revenue = g2.number_input(
+    "Group Revenue",
+    min_value=0.0,
+    value=float_value(draft, "group_revenue", 5460.0),
+    step=100.0,
+    key=f"group_revenue_{draft_key}",
+)
 group_adr = calculate_adr(group_revenue, group_rooms)
 g3.number_input(
     "Group ADR",
@@ -73,10 +182,17 @@ g3.number_input(
     step=1.0,
     disabled=True,
     help="Automatically calculated as Group Revenue divided by Group Rooms.",
+    key=f"group_adr_{draft_key}",
 )
 
 o1, o2, o3 = st.columns(3)
-total_revenue = o1.number_input("Total Revenue", min_value=0.0, value=15960.0, step=100.0)
+total_revenue = o1.number_input(
+    "Total Revenue",
+    min_value=0.0,
+    value=float_value(draft, "total_revenue", 15960.0),
+    step=100.0,
+    key=f"total_revenue_{draft_key}",
+)
 adr = calculate_adr(total_revenue, TOTAL_HOTEL_ROOMS)
 o2.number_input(
     "ADR",
@@ -85,28 +201,98 @@ o2.number_input(
     step=1.0,
     disabled=True,
     help="Automatically calculated as Total Revenue divided by 433 hotel rooms.",
+    key=f"adr_{draft_key}",
 )
-revpar = o3.number_input("RevPAR", min_value=0.0, value=106.8, step=1.0)
+revpar = o3.number_input(
+    "RevPAR",
+    min_value=0.0,
+    value=float_value(draft, "revpar", 106.8),
+    step=1.0,
+    key=f"revpar_{draft_key}",
+)
 
 section_title("Lighthouse Data and OTA Pricing")
 l1, l2, l3, l4, l5, l6 = st.columns(6)
-demand_level = l1.selectbox("Demand Level", ["Low", "Moderate", "High", "Compression"], index=1)
-demand_score = l2.number_input("Demand Score", min_value=0.0, max_value=100.0, value=65.0, step=1.0)
-expedia_rate = l3.number_input("Expedia Rate", min_value=0.0, value=159.0, step=1.0)
-booking_rate = l4.number_input("Booking.com Rate", min_value=0.0, value=162.0, step=1.0)
-agoda_rate = l5.number_input("Agoda Rate", min_value=0.0, value=149.0, step=1.0)
-priceline_rate = l6.number_input("Priceline Rate", min_value=0.0, value=155.0, step=1.0)
+demand_options = ["Low", "Moderate", "High", "Compression"]
+demand_level = l1.selectbox(
+    "Demand Level",
+    demand_options,
+    index=demand_options.index(draft_value(draft, "demand_level", "Moderate"))
+    if draft_value(draft, "demand_level", "Moderate") in demand_options
+    else 1,
+    key=f"demand_level_{draft_key}",
+)
+demand_score = l2.number_input(
+    "Demand Score",
+    min_value=0.0,
+    max_value=100.0,
+    value=float_value(draft, "demand_score", 65.0),
+    step=1.0,
+    key=f"demand_score_{draft_key}",
+)
+expedia_rate = l3.number_input(
+    "Expedia Rate",
+    min_value=0.0,
+    value=float_value(draft, "expedia_rate", 159.0),
+    step=1.0,
+    key=f"expedia_rate_{draft_key}",
+)
+booking_rate = l4.number_input(
+    "Booking.com Rate",
+    min_value=0.0,
+    value=float_value(draft, "booking_rate", 162.0),
+    step=1.0,
+    key=f"booking_rate_{draft_key}",
+)
+agoda_rate = l5.number_input(
+    "Agoda Rate",
+    min_value=0.0,
+    value=float_value(draft, "agoda_rate", 149.0),
+    step=1.0,
+    key=f"agoda_rate_{draft_key}",
+)
+priceline_rate = l6.number_input(
+    "Priceline Rate",
+    min_value=0.0,
+    value=float_value(draft, "priceline_rate", 155.0),
+    step=1.0,
+    key=f"priceline_rate_{draft_key}",
+)
 
 section_title("Comp Set Pricing")
 c1, c2 = st.columns(2)
-my_property_name = c1.text_input("My Property Name", value="My Hotel")
-my_property_rate = c2.number_input("My Property Rate", min_value=0.0, value=165.0, step=1.0)
+my_property_name = c1.text_input(
+    "My Property Name",
+    value=draft_value(draft, "my_property_name", "My Hotel"),
+    key=f"my_property_name_{draft_key}",
+)
+my_property_rate = c2.number_input(
+    "My Property Rate",
+    min_value=0.0,
+    value=float_value(draft, "my_property_rate", 165.0),
+    step=1.0,
+    key=f"my_property_rate_{draft_key}",
+)
 competitor_names = []
 competitor_rates = []
 for idx in range(1, 6):
     n_col, r_col = st.columns(2)
-    competitor_names.append(n_col.text_input(f"Competitor {idx} Name", value=f"Competitor {idx}"))
-    competitor_rates.append(r_col.number_input(f"Competitor {idx} Rate", min_value=0.0, value=150.0 + idx * 4, step=1.0))
+    competitor_names.append(
+        n_col.text_input(
+            f"Competitor {idx} Name",
+            value=draft_value(draft, f"competitor_{idx}_name", f"Competitor {idx}"),
+            key=f"competitor_{idx}_name_{draft_key}",
+        )
+    )
+    competitor_rates.append(
+        r_col.number_input(
+            f"Competitor {idx} Rate",
+            min_value=0.0,
+            value=float_value(draft, f"competitor_{idx}_rate", 150.0 + idx * 4),
+            step=1.0,
+            key=f"competitor_{idx}_rate_{draft_key}",
+        )
+    )
 
 comp_metrics = calculate_comp_set(my_property_rate, competitor_rates)
 k1, k2, k3, k4, k5 = st.columns(5)
@@ -123,14 +309,19 @@ forecast_column, _ = st.columns([1, 3])
 forecast_rooms_to_sell_today = forecast_column.number_input(
     "Forecasted Rooms To Sell Today",
     min_value=0,
-    value=0,
+    value=int_value(draft, "forecast_rooms_to_sell_today", 0),
     step=1,
+    key=f"forecast_rooms_to_sell_today_{draft_key}",
 )
-pickup_template = pd.DataFrame(
+default_pickup_rows = [
     {
-        "pickup_time": ["09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM"],
-        "pickup_available_to_sell_rooms": [55, 53, 51, 49],
+        "pickup_time": pickup_time,
+        "pickup_available_to_sell_rooms": available_rooms,
     }
+    for pickup_time, available_rooms in zip(["09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM"], [55, 53, 51, 49])
+]
+pickup_template = pd.DataFrame(
+    draft.get("pickup_rows") if isinstance(draft.get("pickup_rows"), list) else default_pickup_rows
 )
 pickup_input = st.data_editor(
     pickup_template,
@@ -141,6 +332,7 @@ pickup_input = st.data_editor(
         "pickup_time": st.column_config.TextColumn("Time"),
         "pickup_available_to_sell_rooms": st.column_config.NumberColumn("Available To Sell Rooms", min_value=0),
     },
+    key=f"pickup_input_{draft_key}",
 )
 
 pickup_calculated = calculate_pickup(pickup_input, forecast_rooms_to_sell_today)
@@ -207,7 +399,19 @@ p2.metric("Forecast Rooms Remaining", number(remaining_forecast))
 if not pickup_calculated.empty:
     p3.plotly_chart(pickup_chart(pickup_calculated), use_container_width=True)
 
-submitted = st.button("Export Today's Checklist", type="primary")
+draft_payload = {
+    **general,
+    "pickup_rows": pickup_input.to_dict("records"),
+    "saved_at": datetime.now().isoformat(timespec="seconds"),
+}
+
+save_col, export_col = st.columns([1, 3])
+if save_col.button("Save Draft", key=f"save_draft_{draft_key}"):
+    saved_path = save_draft(checklist_date, draft_payload)
+    st.success(f"Draft saved at {format_saved_time(draft_payload['saved_at'])}.")
+    st.caption(f"Saved locally to {saved_path}")
+
+submitted = export_col.button("Export Today's Checklist", type="primary", key=f"export_checklist_{draft_key}")
 if submitted:
     errors = validate_export_inputs(general, forecast_df, pickup_input)
     if errors:
