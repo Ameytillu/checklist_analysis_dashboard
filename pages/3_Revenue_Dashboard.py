@@ -7,11 +7,17 @@ import streamlit as st
 from utils.calculations import load_checklist, money, normalize_checklist, number, pct, summarize_uploaded_files
 from utils.charts import bar_chart, line_chart
 from utils.insights import forecast_performance, market_position_stats, pricing_decision_signals, trend_alerts
+from utils.ui import apply_theme, callout, page_header, section_title
 from utils.validation import detect_duplicate_uploads, validate_uploaded_checklist
 
 
 st.set_page_config(page_title="Revenue Dashboard", layout="wide")
-st.title("Revenue Dashboard")
+apply_theme()
+page_header(
+    "Revenue Dashboard",
+    "Analyze weekly or 14-day performance with pricing, OTA, pickup, comp set, and forecast decision signals.",
+    "Analytics Workspace",
+)
 
 analysis_window = st.radio(
     "Analysis Window",
@@ -19,8 +25,9 @@ analysis_window = st.radio(
     format_func=lambda days: f"{days}-Day Performance",
     horizontal=True,
 )
-st.caption(
-    f"Upload up to {analysis_window} exported checklist CSVs for trend, comp set, OTA, forecast, pickup, and pricing-decision analytics."
+callout(
+    f"{analysis_window}-day analysis mode",
+    f"Upload up to {analysis_window} checklist CSVs for trend, comp set, OTA, forecast, pickup, and pricing-decision analytics.",
 )
 
 uploads = st.file_uploader("Upload Checklist CSVs", type=["csv"], accept_multiple_files=True)
@@ -65,7 +72,7 @@ if uploads:
     if len(summary) < analysis_window:
         st.info(f"{len(summary)} CSV file(s) uploaded. Add {analysis_window - len(summary)} more to complete the {analysis_window}-day view.")
 
-    st.subheader(f"{analysis_window}-Day KPI Snapshot")
+    section_title(f"{analysis_window}-Day KPI Snapshot")
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("Occupancy", pct(latest["occupancy_pct"]))
     k2.metric("ADR", money(latest["adr"]))
@@ -73,7 +80,7 @@ if uploads:
     k4.metric("Rate Gap", money(latest["rate_difference_vs_comp_set_average"]))
     k5.metric("Pickup Today", number(latest["total_pickup_today"]))
 
-    st.subheader(f"{analysis_window}-Day Performance Summary")
+    section_title(f"{analysis_window}-Day Performance Summary")
     p1, p2, p3, p4, p5 = st.columns(5)
     p1.metric("Avg Occupancy", pct(summary["occupancy_pct"].mean()))
     p2.metric("Total Revenue", money(summary["total_revenue"].sum()))
@@ -107,37 +114,39 @@ if uploads:
         use_container_width=True,
     )
 
-    st.subheader("Pricing Decision Signals")
+    section_title("Pricing Decision Signals")
     st.dataframe(pd.DataFrame(pricing_decision_signals(summary)), use_container_width=True, hide_index=True)
 
-    st.subheader("Trend Charts")
-    c1, c2 = st.columns(2)
-    c1.plotly_chart(line_chart(summary, "date", "occupancy_pct", "Occupancy Trend"), use_container_width=True)
-    c2.plotly_chart(line_chart(summary, "date", "adr", "ADR Trend"), use_container_width=True)
-    c1, c2 = st.columns(2)
-    c1.plotly_chart(line_chart(summary, "date", "revpar", "RevPAR Trend"), use_container_width=True)
-    c2.plotly_chart(line_chart(summary, "date", ["transient_revenue", "group_revenue"], "Transient and Group Revenue Trend"), use_container_width=True)
-    c1, c2 = st.columns(2)
-    c1.plotly_chart(line_chart(summary, "date", ["expedia_rate", "booking_rate", "agoda_rate", "priceline_rate"], "OTA Pricing Trend"), use_container_width=True)
-    c2.plotly_chart(line_chart(summary, "date", ["forecast_total_rooms", "booked_total_rooms", "available_to_sell_total"], "Forecast, Booked, and Available To Sell"), use_container_width=True)
-    st.plotly_chart(line_chart(summary, "date", "total_pickup_today", "Pickup Trend"), use_container_width=True)
+    section_title("Charts and Analytics")
+    trend_tab, pricing_tab, forecast_tab = st.tabs(["Performance Trends", "Pricing Position", "Forecast and Pickup"])
+    with trend_tab:
+        c1, c2 = st.columns(2)
+        c1.plotly_chart(line_chart(summary, "date", "occupancy_pct", "Occupancy Trend"), use_container_width=True)
+        c2.plotly_chart(line_chart(summary, "date", "adr", "ADR Trend"), use_container_width=True)
+        c1, c2 = st.columns(2)
+        c1.plotly_chart(line_chart(summary, "date", "revpar", "RevPAR Trend"), use_container_width=True)
+        c2.plotly_chart(line_chart(summary, "date", ["transient_revenue", "group_revenue"], "Transient and Group Revenue Trend"), use_container_width=True)
+    with pricing_tab:
+        c1, c2 = st.columns(2)
+        c1.plotly_chart(line_chart(summary, "date", ["expedia_rate", "booking_rate", "agoda_rate", "priceline_rate"], "OTA Pricing Trend"), use_container_width=True)
+        c2.plotly_chart(line_chart(summary, "date", ["my_property_rate", "comp_set_average_rate"], "My Property Rate vs Comp Set Average"), use_container_width=True)
+        st.plotly_chart(line_chart(summary, "date", "rate_difference_vs_comp_set_average", "Daily Price Gap"), use_container_width=True)
+        for idx in range(1, 6):
+            st.plotly_chart(
+                line_chart(
+                    summary,
+                    "date",
+                    ["my_property_rate", f"competitor_{idx}_rate"],
+                    f"My Property Rate vs Competitor {idx}",
+                ),
+                use_container_width=True,
+            )
+    with forecast_tab:
+        c1, c2 = st.columns(2)
+        c1.plotly_chart(line_chart(summary, "date", ["forecast_total_rooms", "booked_total_rooms", "available_to_sell_total"], "Forecast, Booked, and Available To Sell"), use_container_width=True)
+        c2.plotly_chart(line_chart(summary, "date", "total_pickup_today", "Pickup Trend"), use_container_width=True)
 
-    st.subheader("Comp Set Analytics")
-    for idx in range(1, 6):
-        st.plotly_chart(
-            line_chart(
-                summary,
-                "date",
-                ["my_property_rate", f"competitor_{idx}_rate"],
-                f"My Property Rate vs Competitor {idx}",
-            ),
-            use_container_width=True,
-        )
-    c1, c2 = st.columns(2)
-    c1.plotly_chart(line_chart(summary, "date", ["my_property_rate", "comp_set_average_rate"], "My Property Rate vs Comp Set Average"), use_container_width=True)
-    c2.plotly_chart(line_chart(summary, "date", "rate_difference_vs_comp_set_average", "Daily Price Gap"), use_container_width=True)
-
-    st.subheader("Market Position Analytics")
+    section_title("Market Position Analytics")
     stats = market_position_stats(summary)
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Days Above Market", stats["days_above_market"])
@@ -150,7 +159,7 @@ if uploads:
     rank_df = stats["rank_distribution"].rename_axis("Rank").reset_index(name="Days")
     st.plotly_chart(bar_chart(rank_df, "Rank", "Days", "Rate Rank Distribution"), use_container_width=True)
 
-    st.subheader("Forecast Performance Analytics")
+    section_title("Forecast Performance Analytics")
     performance = forecast_performance(summary)
     f1, f2, f3 = st.columns(3)
     f1.metric("Forecast Achievement", pct(performance["forecast_achievement_pct"]))
@@ -158,7 +167,7 @@ if uploads:
     f3.metric("Days Behind Forecast", performance["days_behind"])
     st.plotly_chart(line_chart(summary, "date", ["forecast_total_rooms", "booked_total_rooms"], "Forecast vs Booked"), use_container_width=True)
 
-    st.subheader("Alerts")
+    section_title("Alerts")
     alerts = trend_alerts(summary)
     if alerts:
         for alert in alerts:
@@ -166,7 +175,7 @@ if uploads:
     else:
         st.success("No current alerts from the latest uploaded checklist.")
 
-    st.subheader("Combined Data")
+    section_title("Combined Data")
     st.dataframe(summary, use_container_width=True, hide_index=True)
     st.download_button(
         "Download Combined CSV",

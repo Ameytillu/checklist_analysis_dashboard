@@ -17,12 +17,18 @@ from utils.calculations import (
 )
 from utils.charts import comparison_bar
 from utils.insights import comparison_summary
+from utils.ui import apply_theme, callout, page_header, section_title
 from utils.validation import validate_uploaded_checklist
 
 
 st.set_page_config(page_title="Compare Two Days", layout="wide")
-st.title("Compare Two Days")
-st.caption("Upload two exported checklist CSVs to compare performance, OTA rates, comp set position, and forecast pace.")
+apply_theme()
+page_header(
+    "Compare Two Days",
+    "Upload two exported checklist CSVs to see movement in revenue, rates, market rank, and booking pace.",
+    "Daily Comparison",
+)
+callout("Recommended use", "Upload yesterday and today, or two specific business dates, to understand what changed and why it matters.")
 
 day_1_file = st.file_uploader("CSV Day 1", type=["csv"], key="day1")
 day_2_file = st.file_uploader("CSV Day 2", type=["csv"], key="day2")
@@ -49,7 +55,7 @@ if day_1_file and day_2_file:
     day_1 = daily_record(day_1_df)
     day_2 = daily_record(day_2_df)
 
-    st.subheader("Executive Summary")
+    section_title("Executive Summary")
     f1 = forecast_rows(day_1_df)
     f2 = forecast_rows(day_2_df)
     enriched_day_1 = day_1.copy()
@@ -60,7 +66,7 @@ if day_1_file and day_2_file:
     enriched_day_2["booked_total_rooms"] = f2["booked_rooms"].sum()
     st.info(comparison_summary(enriched_day_1, enriched_day_2))
 
-    st.subheader("Metric Comparisons")
+    section_title("Metric Comparisons")
     metric_rows = []
     for field in PERFORMANCE_FIELDS:
         change, pct_change = compare_values(day_2[field], day_1[field])
@@ -77,7 +83,7 @@ if day_1_file and day_2_file:
     st.plotly_chart(comparison_bar(metric_rows, "Day 1 vs Day 2 Performance"), use_container_width=True)
     st.dataframe(metrics_df, use_container_width=True, hide_index=True)
 
-    st.subheader("OTA Comparison")
+    section_title("OTA Comparison")
     ota_rows = []
     for field in OTA_RATE_FIELDS:
         change, pct_change = compare_values(day_2[field], day_1[field])
@@ -92,7 +98,7 @@ if day_1_file and day_2_file:
         )
     st.dataframe(pd.DataFrame(ota_rows), use_container_width=True, hide_index=True)
 
-    st.subheader("Comp Set Comparison")
+    section_title("Comp Set Comparison")
     comp_fields = ["my_property_rate"] + [f"competitor_{idx}_rate" for idx in range(1, 6)] + ["comp_set_average_rate"]
     comp_rows = []
     for field in comp_fields:
@@ -113,7 +119,7 @@ if day_1_file and day_2_file:
     c3.metric("Current Rank", f"#{int(day_2['rate_rank'])}" if day_2["rate_rank"] else "N/A")
     st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
 
-    st.subheader("Forecast Comparison")
+    section_title("Forecast Comparison")
     forecast_compare = f1.merge(f2, on="stay_date", how="outer", suffixes=("_day_1", "_day_2")).fillna(0)
     forecast_compare["pickup_difference"] = forecast_compare["booked_rooms_day_2"] - forecast_compare["booked_rooms_day_1"]
     forecast_compare["pace_difference"] = forecast_compare["available_to_sell_rooms_day_1"] - forecast_compare["available_to_sell_rooms_day_2"]
@@ -123,4 +129,3 @@ if day_1_file and day_2_file:
     st.dataframe(forecast_compare, use_container_width=True, hide_index=True)
 else:
     st.info("Upload two checklist CSV files to generate the comparison dashboard.")
-

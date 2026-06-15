@@ -13,15 +13,21 @@ from utils.calculations import (
     number,
 )
 from utils.charts import pickup_chart
+from utils.ui import apply_theme, callout, page_header, section_title
 from utils.validation import validate_export_inputs
 
 
 st.set_page_config(page_title="Daily Revenue Checklist", layout="wide")
-st.title("Daily Revenue Checklist")
-st.caption("Enter daily revenue data, review automatic calculations, and export a CSV.")
+apply_theme()
+page_header(
+    "Daily Revenue Checklist",
+    "Enter the morning checklist, review comp set and pickup calculations, then export a clean daily CSV.",
+    "Daily Entry",
+)
+callout("CSV export workflow", "The form does not save to a database. Use the download button after validation to keep the daily record.")
 
 with st.form("daily_checklist_form"):
-    st.subheader("General Hotel Metrics")
+    section_title("General Hotel Metrics")
     c1, c2, c3, c4 = st.columns(4)
     checklist_date = c1.date_input("Date", value=date.today())
     occupancy_pct = c2.number_input("Occupancy %", min_value=0.0, max_value=100.0, value=75.0, step=0.1)
@@ -32,7 +38,7 @@ with st.form("daily_checklist_form"):
     total_rooms_available = c2.number_input("Total Rooms Available", min_value=1, value=150)
     total_rooms_sold = c3.number_input("Total Rooms Sold", min_value=0, value=112)
 
-    st.subheader("Previous Night Performance")
+    section_title("Previous Night Performance")
     t1, t2, t3 = st.columns(3)
     transient_rooms = t1.number_input("Transient Rooms", min_value=0, value=70)
     transient_revenue = t2.number_input("Transient Revenue", min_value=0.0, value=10500.0, step=100.0)
@@ -46,7 +52,7 @@ with st.form("daily_checklist_form"):
     adr = o2.number_input("ADR", min_value=0.0, value=142.5, step=1.0)
     revpar = o3.number_input("RevPAR", min_value=0.0, value=106.8, step=1.0)
 
-    st.subheader("Lighthouse Data and OTA Pricing")
+    section_title("Lighthouse Data and OTA Pricing")
     l1, l2, l3, l4, l5, l6 = st.columns(6)
     demand_level = l1.selectbox("Demand Level", ["Low", "Moderate", "High", "Compression"], index=1)
     demand_score = l2.number_input("Demand Score", min_value=0.0, max_value=100.0, value=65.0, step=1.0)
@@ -55,7 +61,7 @@ with st.form("daily_checklist_form"):
     agoda_rate = l5.number_input("Agoda Rate", min_value=0.0, value=149.0, step=1.0)
     priceline_rate = l6.number_input("Priceline Rate", min_value=0.0, value=155.0, step=1.0)
 
-    st.subheader("Comp Set Pricing")
+    section_title("Comp Set Pricing")
     c1, c2 = st.columns(2)
     my_property_name = c1.text_input("My Property Name", value="My Hotel")
     my_property_rate = c2.number_input("My Property Rate", min_value=0.0, value=165.0, step=1.0)
@@ -74,7 +80,7 @@ with st.form("daily_checklist_form"):
     k4.metric("Highest Competitor", money(comp_metrics.highest_competitor_rate))
     k5.metric("Lowest Competitor", money(comp_metrics.lowest_competitor_rate))
 
-    st.subheader("14-Day Forecast")
+    section_title("14-Day Forecast")
     forecast_template = pd.DataFrame(
         {
             "stay_date": [checklist_date + timedelta(days=idx) for idx in range(14)],
@@ -98,7 +104,7 @@ with st.form("daily_checklist_form"):
         },
     )
 
-    st.subheader("Hourly Pickup Tracker")
+    section_title("Hourly Pickup Tracker")
     pickup_template = pd.DataFrame(
         {
             "pickup_time": ["09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM"],
@@ -153,7 +159,7 @@ for idx, (name, rate) in enumerate(zip(competitor_names, competitor_rates), star
     general[f"competitor_{idx}_rate"] = rate
 
 pickup_calculated = calculate_pickup(pickup_input)
-st.subheader("Pickup Summary")
+section_title("Pickup Summary")
 total_pickup = pickup_calculated["pickup_rooms"].sum() if not pickup_calculated.empty else 0
 p1, p2 = st.columns([1, 3])
 p1.metric("Total Pickup Today", number(total_pickup))
@@ -175,4 +181,3 @@ if submitted:
             file_name=filename,
             mime="text/csv",
         )
-
