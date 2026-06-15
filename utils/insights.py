@@ -97,3 +97,123 @@ def forecast_performance(summary: pd.DataFrame) -> dict:
         "days_behind": int((gap < 0).sum()),
     }
 
+
+def pricing_decision_signals(summary: pd.DataFrame) -> list[dict]:
+    if summary.empty:
+        return []
+
+    latest = summary.iloc[-1]
+    my_rate = to_number(latest["my_property_rate"])
+    comp_avg = to_number(latest["comp_set_average_rate"])
+    rate_gap = to_number(latest["rate_difference_vs_comp_set_average"])
+    occupancy = to_number(latest["occupancy_pct"])
+    demand_score = to_number(latest.get("demand_score", 0))
+    forecast_gap = to_number(latest.get("booked_total_rooms", 0)) - to_number(latest.get("forecast_total_rooms", 0))
+    pickup = to_number(latest.get("total_pickup_today", 0))
+    pickup_avg = summary["total_pickup_today"].apply(to_number).mean() if "total_pickup_today" in summary else 0
+    revpar = to_number(latest["revpar"])
+    revpar_avg = summary["revpar"].apply(to_number).mean() if "revpar" in summary else 0
+
+    ota_rates = {
+        "Expedia": to_number(latest["expedia_rate"]),
+        "Booking.com": to_number(latest["booking_rate"]),
+        "Agoda": to_number(latest["agoda_rate"]),
+        "Priceline": to_number(latest["priceline_rate"]),
+    }
+    undercutters = [
+        f"{name} ({money(my_rate - rate)} below BAR)"
+        for name, rate in ota_rates.items()
+        if rate and rate < my_rate
+    ]
+
+    signals = []
+    if occupancy >= 85 and demand_score >= 70 and forecast_gap >= 0:
+        cue = "Consider a controlled rate increase or tighter discount controls."
+        status = "Strong demand"
+    elif occupancy < 65 or forecast_gap < -10:
+        cue = "Review value-adds, fenced offers, or tactical pricing to build pace."
+        status = "Pace risk"
+    else:
+        cue = "Hold pricing unless comp set movement or pickup changes."
+        status = "Stable"
+    signals.append(
+        {
+            "Signal": "Demand and Pace",
+            "Current Read": f"{pct(occupancy)} occupancy, forecast gap {number(forecast_gap)} rooms",
+            "Decision Cue": cue,
+            "Status": status,
+        }
+    )
+
+    if rate_gap < -10:
+        cue = f"Property is meaningfully below market; test moving closer to {money(comp_avg)} if demand supports it."
+        status = "Below market"
+    elif rate_gap > 10:
+        cue = "Monitor conversion and pickup closely; premium pricing needs demand support."
+        status = "Above market"
+    else:
+        cue = "Property is close to comp set average; pricing position is balanced."
+        status = "In line"
+    signals.append(
+        {
+            "Signal": "Comp Set Position",
+            "Current Read": f"My rate {money(my_rate)} vs comp average {money(comp_avg)}",
+            "Decision Cue": cue,
+            "Status": status,
+        }
+    )
+
+    if undercutters:
+        cue = "Check channel parity and suppress/adjust undercutting OTA rates before changing BAR."
+        status = "Parity issue"
+        current_read = "; ".join(undercutters)
+    else:
+        cue = "OTA rates are not undercutting BAR on the latest uploaded day."
+        status = "Aligned"
+        current_read = "No OTA below BAR"
+    signals.append(
+        {
+            "Signal": "OTA Parity",
+            "Current Read": current_read,
+            "Decision Cue": cue,
+            "Status": status,
+        }
+    )
+
+    if pickup_avg and pickup > pickup_avg:
+        pickup_cue = "Pickup is above the uploaded-period average; rate resistance appears lower."
+        pickup_status = "Positive"
+    elif pickup_avg and pickup < pickup_avg:
+        pickup_cue = "Pickup is below the uploaded-period average; avoid aggressive increases without more demand."
+        pickup_status = "Soft"
+    else:
+        pickup_cue = "Pickup is aligned with the uploaded-period average."
+        pickup_status = "Neutral"
+    signals.append(
+        {
+            "Signal": "Pickup Momentum",
+            "Current Read": f"Latest pickup {number(pickup)} rooms vs average {number(pickup_avg)}",
+            "Decision Cue": pickup_cue,
+            "Status": pickup_status,
+        }
+    )
+
+    if revpar_avg and revpar > revpar_avg:
+        revpar_cue = "RevPAR is outperforming the uploaded-period average; protect rate quality."
+        revpar_status = "Improving"
+    elif revpar_avg and revpar < revpar_avg:
+        revpar_cue = "RevPAR trails the uploaded-period average; inspect occupancy, ADR, and mix before changing price."
+        revpar_status = "Trailing"
+    else:
+        revpar_cue = "RevPAR is aligned with the uploaded-period average."
+        revpar_status = "Neutral"
+    signals.append(
+        {
+            "Signal": "RevPAR Quality",
+            "Current Read": f"Latest RevPAR {money(revpar)} vs average {money(revpar_avg)}",
+            "Decision Cue": revpar_cue,
+            "Status": revpar_status,
+        }
+    )
+
+    return signals

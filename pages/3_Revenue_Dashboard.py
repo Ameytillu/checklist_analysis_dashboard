@@ -1,23 +1,33 @@
 from __future__ import annotations
 
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from utils.calculations import load_checklist, money, normalize_checklist, number, pct, summarize_uploaded_files
 from utils.charts import bar_chart, line_chart
-from utils.insights import forecast_performance, market_position_stats, trend_alerts
+from utils.insights import forecast_performance, market_position_stats, pricing_decision_signals, trend_alerts
 from utils.validation import detect_duplicate_uploads, validate_uploaded_checklist
 
 
-st.set_page_config(page_title="14-Day Revenue Dashboard", layout="wide")
-st.title("14-Day Revenue Dashboard")
-st.caption("Upload up to 14 exported checklist CSVs for trend, comp set, OTA, forecast, and pickup analytics.")
+st.set_page_config(page_title="Revenue Dashboard", layout="wide")
+st.title("Revenue Dashboard")
+
+analysis_window = st.radio(
+    "Analysis Window",
+    options=[7, 14],
+    format_func=lambda days: f"{days}-Day Performance",
+    horizontal=True,
+)
+st.caption(
+    f"Upload up to {analysis_window} exported checklist CSVs for trend, comp set, OTA, forecast, pickup, and pricing-decision analytics."
+)
 
 uploads = st.file_uploader("Upload Checklist CSVs", type=["csv"], accept_multiple_files=True)
 
 if uploads:
-    if len(uploads) > 14:
-        st.error("Upload 14 files or fewer.")
+    if len(uploads) > analysis_window:
+        st.error(f"Upload {analysis_window} files or fewer for the selected analysis window.")
         st.stop()
     duplicates = detect_duplicate_uploads(uploads)
     if duplicates:
@@ -52,13 +62,53 @@ if uploads:
     summary = summarize_uploaded_files(loaded)
     latest = summary.iloc[-1]
 
-    st.subheader("KPI Snapshot")
+    if len(summary) < analysis_window:
+        st.info(f"{len(summary)} CSV file(s) uploaded. Add {analysis_window - len(summary)} more to complete the {analysis_window}-day view.")
+
+    st.subheader(f"{analysis_window}-Day KPI Snapshot")
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("Occupancy", pct(latest["occupancy_pct"]))
     k2.metric("ADR", money(latest["adr"]))
     k3.metric("RevPAR", money(latest["revpar"]))
     k4.metric("Rate Gap", money(latest["rate_difference_vs_comp_set_average"]))
     k5.metric("Pickup Today", number(latest["total_pickup_today"]))
+
+    st.subheader(f"{analysis_window}-Day Performance Summary")
+    p1, p2, p3, p4, p5 = st.columns(5)
+    p1.metric("Avg Occupancy", pct(summary["occupancy_pct"].mean()))
+    p2.metric("Total Revenue", money(summary["total_revenue"].sum()))
+    p3.metric("Avg ADR", money(summary["adr"].mean()))
+    p4.metric("Avg RevPAR", money(summary["revpar"].mean()))
+    p5.metric("Total Pickup", number(summary["total_pickup_today"].sum()))
+
+    mix_df = pd.DataFrame(
+        {
+            "Segment": ["Transient Revenue", "Group Revenue"],
+            "Revenue": [summary["transient_revenue"].sum(), summary["group_revenue"].sum()],
+        }
+    )
+    c1, c2 = st.columns(2)
+    c1.plotly_chart(bar_chart(mix_df, "Segment", "Revenue", f"{analysis_window}-Day Revenue Mix"), use_container_width=True)
+    c2.plotly_chart(
+        px.scatter(
+            summary,
+            x="rate_difference_vs_comp_set_average",
+            y="occupancy_pct",
+            size="total_revenue",
+            hover_data=["date", "my_property_rate", "comp_set_average_rate", "rate_rank"],
+            title="Pricing Position vs Occupancy",
+            labels={
+                "rate_difference_vs_comp_set_average": "Rate Gap vs Comp Set",
+                "occupancy_pct": "Occupancy %",
+                "total_revenue": "Total Revenue",
+            },
+            template="plotly_white",
+        ),
+        use_container_width=True,
+    )
+
+    st.subheader("Pricing Decision Signals")
+    st.dataframe(pd.DataFrame(pricing_decision_signals(summary)), use_container_width=True, hide_index=True)
 
     st.subheader("Trend Charts")
     c1, c2 = st.columns(2)
@@ -121,9 +171,8 @@ if uploads:
     st.download_button(
         "Download Combined CSV",
         data=summary.to_csv(index=False).encode("utf-8"),
-        file_name="combined_revenue_dashboard.csv",
+        file_name=f"combined_{analysis_window}_day_revenue_dashboard.csv",
         mime="text/csv",
     )
 else:
-    st.info("Upload up to 14 exported checklist CSV files to generate the revenue dashboard.")
-
+    st.info(f"Upload up to {analysis_window} exported checklist CSV files to generate the revenue dashboard.")

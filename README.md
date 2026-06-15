@@ -9,7 +9,7 @@ Streamlit application for CSV-only hotel revenue checklist entry, day-over-day c
 - Automatic hourly pickup calculations and pickup chart.
 - CSV export named `revenue_checklist_YYYY-MM-DD.csv`.
 - Compare Two Days page for performance, OTA, comp set, forecast, and executive summary comparisons.
-- 14-Day Revenue Dashboard page for trends, market position analytics, forecast performance, alerts, and combined CSV download.
+- Revenue Dashboard page with 7-day and 14-day upload options for trends, market position analytics, forecast performance, pricing decision signals, alerts, and combined CSV download.
 - No SQL database, cloud database, or permanent app storage.
 
 ## Setup
@@ -25,7 +25,7 @@ streamlit run app.py
 2. Enter the daily checklist.
 3. Click `Export Today's Checklist`.
 4. Store the CSV wherever you manage files, such as local folders, Google Drive, or a company drive.
-5. Upload exported CSVs into `Compare Two Days` or `14-Day Revenue Dashboard`.
+5. Upload exported CSVs into `Compare Two Days` or `Revenue Dashboard`.
 
 ## Project Structure
 
@@ -35,7 +35,7 @@ hotel_revenue_dashboard/
 ├── pages/
 │   ├── 1_Daily_Revenue_Checklist.py
 │   ├── 2_Compare_Two_Days.py
-│   ├── 3_14_Day_Revenue_Dashboard.py
+│   ├── 3_Revenue_Dashboard.py
 ├── utils/
 │   ├── calculations.py
 │   ├── charts.py
@@ -49,5 +49,4 @@ hotel_revenue_dashboard/
 
 ## Sample Data
 
-Use `sample_data/sample_revenue_checklist.csv` to test uploads. For trend testing, export several daily CSVs from the checklist page or duplicate the sample and adjust the `date` values.
-
+Use `sample_data/sample_revenue_checklist.csv` to test uploads. For weekly trend testing, export or prepare 7 daily CSVs and select `7-Day Performance` on the dashboard. For a longer trend, upload up to 14 files and select `14-Day Performance`.
