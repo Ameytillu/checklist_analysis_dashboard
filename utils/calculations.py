@@ -58,12 +58,19 @@ FORECAST_FIELDS = [
 ]
 
 PICKUP_FIELDS = [
+    "pickup_date",
     "pickup_time",
+    "pickup_forecast_rooms_to_sell",
     "pickup_available_to_sell_rooms",
     "pickup_rooms",
     "forecast_rooms_remaining",
 ]
-OPTIONAL_CSV_COLUMNS = ["forecast_rooms_to_sell_today", "forecast_rooms_remaining"]
+OPTIONAL_CSV_COLUMNS = [
+    "forecast_rooms_to_sell_today",
+    "pickup_date",
+    "pickup_forecast_rooms_to_sell",
+    "forecast_rooms_remaining",
+]
 
 COMPETITOR_RATE_FIELDS = [f"competitor_{idx}_rate" for idx in range(1, 6)]
 OTA_RATE_FIELDS = ["expedia_rate", "booking_rate", "agoda_rate", "priceline_rate"]
@@ -139,14 +146,25 @@ def calculate_pickup(pickup_df: pd.DataFrame, forecast_rooms_to_sell_today: floa
     df = pickup_df.copy()
     if df.empty:
         return pd.DataFrame(columns=PICKUP_FIELDS)
+    if "pickup_date" not in df.columns:
+        df["pickup_date"] = pd.NA
+    if "pickup_forecast_rooms_to_sell" not in df.columns:
+        df["pickup_forecast_rooms_to_sell"] = forecast_rooms_to_sell_today
     df["pickup_available_to_sell_rooms"] = pd.to_numeric(
         df["pickup_available_to_sell_rooms"], errors="coerce"
     ).fillna(0)
+    df["pickup_forecast_rooms_to_sell"] = pd.to_numeric(
+        df["pickup_forecast_rooms_to_sell"], errors="coerce"
+    ).fillna(to_number(forecast_rooms_to_sell_today))
+
+    group_key = df["pickup_date"].astype(str).where(df["pickup_date"].notna(), "")
     df["pickup_rooms"] = (
-        df["pickup_available_to_sell_rooms"].shift(1) - df["pickup_available_to_sell_rooms"]
+        df.groupby(group_key, sort=False)["pickup_available_to_sell_rooms"].shift(1)
+        - df["pickup_available_to_sell_rooms"]
     ).fillna(0)
-    forecast_rooms = to_number(forecast_rooms_to_sell_today)
-    df["forecast_rooms_remaining"] = (forecast_rooms - df["pickup_rooms"].cumsum()).clip(lower=0)
+    df["forecast_rooms_remaining"] = (
+        df["pickup_forecast_rooms_to_sell"] - df.groupby(group_key, sort=False)["pickup_rooms"].cumsum()
+    ).clip(lower=0)
     return df
 
 
@@ -177,13 +195,13 @@ def normalize_checklist(df: pd.DataFrame) -> pd.DataFrame:
     for column in CSV_COLUMNS:
         if column not in clean.columns:
             clean[column] = pd.NA
-    date_columns = ["date", "stay_date"]
+    date_columns = ["date", "stay_date", "pickup_date"]
     for column in date_columns:
         clean[column] = pd.to_datetime(clean[column], errors="coerce")
     numeric_columns = [
         column
         for column in CSV_COLUMNS
-        if column not in {"date", "stay_date", "demand_level", "my_property_name"}
+        if column not in {"date", "stay_date", "pickup_date", "demand_level", "my_property_name"}
         and not column.endswith("_name")
         and column != "pickup_time"
     ]
