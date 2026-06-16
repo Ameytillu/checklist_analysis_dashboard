@@ -116,8 +116,8 @@ def normalize_forecast_rows(rows: list[dict] | None, start_day: date) -> pd.Data
 
 def pickup_hour_labels() -> list[str]:
     return [
-        (datetime.combine(date.today(), datetime.min.time()) + timedelta(hours=hour)).strftime("%I:00 %p")
-        for hour in range(24)
+        (datetime.combine(date.today(), datetime.min.time()) + timedelta(hours=8, minutes=30) + timedelta(hours=offset)).strftime("%I:%M %p")
+        for offset in range(9)
     ]
 
 
@@ -167,7 +167,9 @@ def matrix_to_forecast_rows(matrix: pd.DataFrame, pickup_days: list[date]) -> pd
     for pickup_day in pickup_days:
         column = pickup_date_label(pickup_day)
         forecast_rooms = safe_int(matrix.loc[0, column])
-        hourly_values = pd.to_numeric(matrix.loc[1:, column], errors="coerce").fillna(0)
+        hourly_matrix = matrix.iloc[1:].copy()
+        hourly_matrix = hourly_matrix[hourly_matrix["Time"].astype(str).str.strip().ne("")]
+        hourly_values = pd.to_numeric(hourly_matrix[column], errors="coerce").fillna(0)
         rows.append(
             {
                 "stay_date": pickup_day.isoformat(),
@@ -182,10 +184,12 @@ def matrix_to_forecast_rows(matrix: pd.DataFrame, pickup_days: list[date]) -> pd
 
 def matrix_to_pickup_rows(matrix: pd.DataFrame, pickup_days: list[date]) -> pd.DataFrame:
     rows = []
+    hourly_matrix = matrix.iloc[1:].copy()
+    hourly_matrix = hourly_matrix[hourly_matrix["Time"].astype(str).str.strip().ne("")]
     for pickup_day in pickup_days:
         column = pickup_date_label(pickup_day)
         forecast_rooms = safe_int(matrix.loc[0, column])
-        for row_idx, pickup_time in enumerate(matrix["Time"].iloc[1:], start=1):
+        for row_idx, pickup_time in hourly_matrix["Time"].items():
             available_rooms = safe_int(matrix.loc[row_idx, column])
             rows.append(
                 {
@@ -435,7 +439,7 @@ pickup_days = forecast_window(checklist_date)
 forecast_template = normalize_forecast_rows(draft.get("forecast_rows"), checklist_date)
 pickup_matrix_template = build_pickup_matrix(pickup_days, forecast_template, draft.get("pickup_rows"))
 pickup_column_config = {
-    "Time": st.column_config.TextColumn("Time", disabled=True, width="medium"),
+    "Time": st.column_config.TextColumn("Time", width="medium"),
 }
 for pickup_day in pickup_days:
     pickup_column_config[pickup_date_label(pickup_day)] = st.column_config.NumberColumn(
@@ -448,11 +452,12 @@ for pickup_day in pickup_days:
 pickup_matrix_input = st.data_editor(
     pickup_matrix_template,
     hide_index=True,
-    num_rows="fixed",
+    num_rows="dynamic",
     use_container_width=True,
     column_config=pickup_column_config,
     key=f"pickup_matrix_{draft_key}",
 )
+pickup_matrix_input.loc[0, "Time"] = "Forecasted Rooms"
 forecast_df = matrix_to_forecast_rows(pickup_matrix_input, pickup_days)
 forecast_rooms_to_sell_today = safe_int(forecast_df.loc[0, "forecast_rooms"]) if not forecast_df.empty else 0
 all_pickup_input = matrix_to_pickup_rows(pickup_matrix_input, pickup_days)
@@ -498,28 +503,17 @@ section_title("Pickup Summary")
 total_pickup = all_pickup_calculated["pickup_rooms"].sum() if not all_pickup_calculated.empty else 0
 total_forecast = forecast_df["forecast_rooms"].sum() if not forecast_df.empty else 0
 total_remaining = max(total_forecast - total_pickup, 0)
-p1, p2, p3 = st.columns(3)
+today_key = checklist_date.isoformat()
+today_forecast_rows = forecast_df.loc[forecast_df["stay_date"] == today_key, "forecast_rooms"]
+today_forecast = safe_int(today_forecast_rows.iloc[0]) if not today_forecast_rows.empty else 0
+today_pickup_rows = all_pickup_calculated[all_pickup_calculated["pickup_date"].astype(str) == today_key]
+today_pickup = today_pickup_rows["pickup_rooms"].sum() if not today_pickup_rows.empty else 0
+today_remaining = max(today_forecast - today_pickup, 0)
+p1, p2, p3, p4 = st.columns(4)
 p1.metric("14-Day Forecast", number(total_forecast))
 p2.metric("14-Day Pickup", number(total_pickup))
 p3.metric("Forecast Remaining", number(total_remaining))
-
-summary_rows = []
-for pickup_day in pickup_days:
-    day_key = pickup_day.isoformat()
-    day_forecast = safe_int(
-        forecast_df.loc[forecast_df["stay_date"] == day_key, "forecast_rooms"].iloc[0]
-    )
-    day_pickup_rows = all_pickup_calculated[all_pickup_calculated["pickup_date"].astype(str) == day_key]
-    day_pickup = day_pickup_rows["pickup_rooms"].sum() if not day_pickup_rows.empty else 0
-    summary_rows.append(
-        {
-            "Date": pickup_day.strftime("%b %d"),
-            "Forecast Rooms": day_forecast,
-            "Pickup Rooms": day_pickup,
-            "Forecast Rooms Remaining": max(day_forecast - day_pickup, 0),
-        }
-    )
-st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
+p4.metric("Today Pickup", number(today_pickup), delta=f"{number(today_remaining)} rooms away")
 
 draft_payload = {
     **general,
