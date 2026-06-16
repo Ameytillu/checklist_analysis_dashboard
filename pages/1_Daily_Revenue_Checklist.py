@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from utils.calculations import (
@@ -514,6 +515,55 @@ p1.metric("14-Day Forecast", number(total_forecast))
 p2.metric("14-Day Pickup", number(total_pickup))
 p3.metric("Forecast Remaining", number(total_remaining))
 p4.metric("Today Pickup", number(today_pickup), delta=f"{number(today_remaining)} rooms away")
+
+pickup_monitoring_rows = []
+for pickup_day in pickup_days:
+    day_key = pickup_day.isoformat()
+    day_forecast_rows = forecast_df.loc[forecast_df["stay_date"] == day_key, "forecast_rooms"]
+    day_forecast = safe_int(day_forecast_rows.iloc[0]) if not day_forecast_rows.empty else 0
+    day_pickup_rows = all_pickup_calculated[all_pickup_calculated["pickup_date"].astype(str) == day_key]
+    day_pickup = day_pickup_rows["pickup_rooms"].sum() if not day_pickup_rows.empty else 0
+    pickup_monitoring_rows.append(
+        {
+            "date": pickup_day.strftime("%b %d"),
+            "forecast_rooms": day_forecast,
+            "pickup_rooms": day_pickup,
+            "remaining_rooms": max(day_forecast - day_pickup, 0),
+        }
+    )
+
+pickup_monitoring_df = pd.DataFrame(pickup_monitoring_rows)
+pickup_monitoring_chart = go.Figure()
+pickup_monitoring_chart.add_bar(
+    x=pickup_monitoring_df["date"],
+    y=pickup_monitoring_df["pickup_rooms"],
+    name="Pickup Rooms",
+    marker_color="#2563eb",
+)
+pickup_monitoring_chart.add_scatter(
+    x=pickup_monitoring_df["date"],
+    y=pickup_monitoring_df["forecast_rooms"],
+    name="Forecast Rooms",
+    mode="lines+markers",
+    line=dict(color="#111827", width=3),
+)
+pickup_monitoring_chart.add_scatter(
+    x=pickup_monitoring_df["date"],
+    y=pickup_monitoring_df["remaining_rooms"],
+    name="Rooms Away",
+    mode="lines+markers",
+    line=dict(color="#f59e0b", width=3),
+)
+pickup_monitoring_chart.update_layout(
+    title="Pickup Monitoring",
+    barmode="group",
+    template="plotly_white",
+    legend_title_text="",
+    margin=dict(l=10, r=10, t=55, b=10),
+    xaxis_title="Date",
+    yaxis_title="Rooms",
+)
+st.plotly_chart(pickup_monitoring_chart, use_container_width=True)
 
 draft_payload = {
     **general,
